@@ -4,314 +4,205 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Leads Finder Dashboard</title>
-  <style>
-    :root {
-      --bg: #f7f1e6;
-      --panel: #fffaf0;
-      --ink: #1a1f36;
-      --muted: #56627a;
-      --brand: #0b6e4f;
-      --brand-soft: #d9f2e9;
-      --warn: #a33f2f;
-      --line: #e5d8c3;
-      --chip: #f0e8d8;
-    }
-
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: var(--ink);
-      background:
-        radial-gradient(60rem 30rem at 80% -5%, #f9d9b5 0%, transparent 60%),
-        radial-gradient(40rem 25rem at -10% 110%, #cde9df 0%, transparent 60%),
-        var(--bg);
-      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-    }
-
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 28px 18px 40px;
-    }
-
-    .hero {
-      display: grid;
-      gap: 14px;
-      padding: 18px;
-      border: 1px solid var(--line);
-      background: linear-gradient(135deg, #fff7ea, #fffdf7);
-      border-radius: 16px;
-      box-shadow: 0 10px 25px rgba(26, 31, 54, 0.08);
-    }
-
-    .title {
-      margin: 0;
-      font-size: clamp(1.4rem, 4vw, 2rem);
-      letter-spacing: 0.01em;
-    }
-
-    .subtitle {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 6px;
-    }
-
-    button, a.button {
-      border: 0;
-      border-radius: 10px;
-      padding: 10px 14px;
-      cursor: pointer;
-      font-weight: 600;
-      font-size: 0.92rem;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.15s ease, opacity 0.15s ease;
-    }
-
-    button:hover, a.button:hover { transform: translateY(-1px); }
-    button:active, a.button:active { transform: translateY(0); }
-
-    .primary { background: var(--brand); color: white; }
-    .secondary { background: var(--chip); color: var(--ink); }
-
-    .meta {
-      margin-top: 12px;
-      font-size: 0.88rem;
-      color: var(--muted);
-      min-height: 1.3em;
-    }
-
-    .grid {
-      margin-top: 16px;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 12px;
-      opacity: 0;
-      transform: translateY(8px);
-      animation: reveal 0.3s ease forwards;
-    }
-
-    .card:nth-child(2) { animation-delay: 0.06s; }
-    .card:nth-child(3) { animation-delay: 0.12s; }
-
-    .k { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
-    .v { margin-top: 4px; font-size: 1.2rem; font-weight: 700; }
-
-    .list {
-      margin-top: 14px;
-      display: grid;
-      gap: 10px;
-    }
-
-    .item {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 12px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .item h3 {
-      margin: 0;
-      font-size: 1rem;
-      line-height: 1.35;
-    }
-
-    .pill {
-      background: var(--brand-soft);
-      color: #0b4938;
-      border-radius: 999px;
-      padding: 3px 10px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
-    .summary {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.9rem;
-      line-height: 1.45;
-    }
-
-    .reasons {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .chip {
-      background: var(--chip);
-      border-radius: 8px;
-      padding: 3px 8px;
-      font-size: 0.78rem;
-    }
-
-    .error { color: var(--warn); }
-
-    @keyframes reveal {
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @media (max-width: 900px) {
-      .grid { grid-template-columns: 1fr; }
-    }
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/styles.css?v=9" />
 </head>
-<body>
+<body class="dark-theme">
   <div class="wrap">
     <section class="hero">
-      <h1 class="title">Leads Finder Dashboard</h1>
-      <p class="subtitle">Run the lead pipeline, inspect ranked opportunities, and export current review data.</p>
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">Pipeline Console</p>
+          <h1 class="title">Leads Finder Dashboard</h1>
+          <p class="subtitle">Run pipeline, inspect ranked opportunities, monitor source health, and export review CSV.</p>
+        </div>
+        <span class="pulse">LIVE VIEW</span>
+      </div>
       <div class="actions">
-        <button id="runBtn" class="primary" type="button">Run Pipeline Now</button>
+        <button id="runBtn" class="primary" type="button">Run Pipeline</button>
         <a class="button secondary" href="/api/export.csv" target="_blank" rel="noreferrer">Export CSV</a>
-        <button id="refreshBtn" class="secondary" type="button">Refresh Leads</button>
+        <button id="refreshBtn" class="secondary" type="button">Refresh</button>
       </div>
       <div id="meta" class="meta">Ready.</div>
     </section>
 
-    <section class="grid" id="stats">
+    <section class="stats" id="stats">
       <article class="card">
-        <div class="k">Leads</div>
+        <div class="k">Stored Leads</div>
         <div id="countLeads" class="v">0</div>
       </article>
       <article class="card">
-        <div class="k">Runs</div>
+        <div class="k">Pipeline Runs</div>
         <div id="countRuns" class="v">0</div>
       </article>
       <article class="card">
         <div class="k">Top Score</div>
         <div id="topScore" class="v">0.00</div>
       </article>
+      <article class="card">
+        <div class="k">Filtered In</div>
+        <div id="filteredIn" class="v">0</div>
+      </article>
+      <article class="card">
+        <div class="k">Approved</div>
+        <div id="approvedCount" class="v">0</div>
+      </article>
+      <article class="card">
+        <div class="k">Rejected</div>
+        <div id="rejectedCount" class="v">0</div>
+      </article>
+      <article class="card">
+        <div class="k">Skipped Existing</div>
+        <div id="skippedExisting" class="v">0</div>
+      </article>
+      <article class="card">
+        <div class="k">Auto Run</div>
+        <div id="autoRunStatus" class="v">off</div>
+      </article>
     </section>
 
-    <section id="list" class="list"></section>
+    <section class="section">
+      <h2 class="section-title">Run Snapshot</h2>
+      <div class="snapshot-grid">
+        <article class="snapshot-item">
+          <div class="snapshot-k">Latest Run</div>
+          <div id="latestRunTime" class="snapshot-v">-</div>
+        </article>
+        <article class="snapshot-item">
+          <div class="snapshot-k">Ingestion Leads</div>
+          <div id="ingestionCount" class="snapshot-v">0</div>
+        </article>
+        <article class="snapshot-item">
+          <div class="snapshot-k">Ranked</div>
+          <div id="rankedCount" class="snapshot-v">0</div>
+        </article>
+        <article class="snapshot-item">
+          <div class="snapshot-k">Enriched</div>
+          <div id="enrichedCount" class="snapshot-v">0</div>
+        </article>
+      </div>
+      <div class="rejection-wrap">
+        <div class="snapshot-k">Top Rejection Reasons</div>
+        <div id="rejectionReasons" class="rejection-reasons">No rejections yet.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Source Health</h2>
+      <div id="healthList" class="health-grid"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Lead Filters</h2>
+      <div class="filter-toolbar">
+        <div class="preset-group">
+          <button id="presetFreelanceBtn" class="secondary tiny" type="button">Freelance Hunt</button>
+          <button id="presetHelpBtn" class="secondary tiny" type="button">Help Requests</button>
+          <button id="presetHighSignalBtn" class="secondary tiny" type="button">High Signal</button>
+        </div>
+        <div id="filterResultMeta" class="filter-result-meta">Showing 0 leads</div>
+      </div>
+      <div class="filters">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" type="search" placeholder="title, summary, reasons" />
+        </label>
+        <label class="field">
+          <span>Source</span>
+          <select id="sourceSelect">
+            <option value="all">All sources</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Min Score</span>
+          <input id="minScoreInput" type="number" min="0" max="1" step="0.01" value="0.00" />
+        </label>
+        <label class="field">
+          <span>Min Confidence</span>
+          <input id="minConfidenceInput" type="number" min="0" max="1" step="0.01" value="0.00" />
+        </label>
+        <label class="field checkbox">
+          <input id="freelancerOnlyInput" type="checkbox" />
+          <span>Freelancer Only</span>
+        </label>
+        <label class="field checkbox">
+          <input id="hiringOnlyInput" type="checkbox" />
+          <span>Hiring Only</span>
+        </label>
+        <label class="field checkbox">
+          <input id="helpOnlyInput" type="checkbox" />
+          <span>Help Requests Only</span>
+        </label>
+        <label class="field">
+          <span>Sort</span>
+          <select id="sortSelect">
+            <option value="verdict_priority">Freelancer → Help Needed → Rejected</option>
+            <option value="confidence_desc">Confidence high → low</option>
+            <option value="score_desc">Score high → low</option>
+            <option value="score_asc">Score low → high</option>
+            <option value="recent">Most recent</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Status</span>
+          <select id="statusSelect">
+            <option value="all">All statuses</option>
+            <option value="new">new</option>
+            <option value="scored">scored</option>
+            <option value="failed">failed</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Category</span>
+          <select id="categorySelect">
+            <option value="all">All categories</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Urgency</span>
+          <select id="urgencySelect">
+            <option value="all">All urgency</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Min Reasons</span>
+          <input id="minReasonsInput" type="number" min="0" step="1" value="0" />
+        </label>
+
+        <label class="field checkbox">
+          <input id="enrichedOnlyInput" type="checkbox" />
+          <span>Enriched Only</span>
+        </label>
+
+        <label class="field checkbox">
+          <input id="hasLinkInput" type="checkbox" />
+          <span>Has Source Link</span>
+        </label>
+
+        <button id="clearFiltersBtn" class="secondary" type="button">Clear Filters</button>
+      </div>
+    </section>
+
+    <section class="section tabs-section">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="approved">✓ Approved</button>
+        <button class="tab-btn" data-tab="rejected">✗ Rejected</button>
+      </div>
+      <div class="tab-meta">
+        <span id="approvedMeta" class="tab-count">Approved: 0</span>
+        <span id="rejectedMeta" class="tab-count">Rejected: 0</span>
+      </div>
+      <div id="approvedLeads" class="tab-content active"></div>
+      <div id="rejectedLeads" class="tab-content"></div>
+    </section>
   </div>
-
-  <script>
-    const meta = document.getElementById("meta");
-    const runBtn = document.getElementById("runBtn");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const countLeads = document.getElementById("countLeads");
-    const countRuns = document.getElementById("countRuns");
-    const topScore = document.getElementById("topScore");
-    const list = document.getElementById("list");
-
-    async function fetchJson(url, options) {
-      const response = await fetch(url, options);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} on ${url}`);
-      }
-      return response.json();
-    }
-
-    function render(items) {
-      list.innerHTML = "";
-      if (!items.length) {
-        list.innerHTML = '<article class="item"><p class="summary">No leads yet. Run the pipeline to fetch candidates.</p></article>';
-        return;
-      }
-
-      for (const item of items) {
-        const reasons = (item.reasons || []).slice(0, 4).map(r => `<span class="chip">${escapeHtml(r)}</span>`).join("");
-        const el = document.createElement("article");
-        el.className = "item";
-        el.innerHTML = `
-          <div class="row">
-            <h3>${escapeHtml(item.title || "Untitled")}</h3>
-            <span class="pill">${escapeHtml(item.source)} • ${Number(item.score_total || 0).toFixed(3)}</span>
-          </div>
-          <p class="summary">${escapeHtml(item.summary || "")}</p>
-          <div class="reasons">${reasons}</div>
-        `;
-        list.appendChild(el);
-      }
-    }
-
-    function escapeHtml(text) {
-      return String(text)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    async function refreshAll() {
-      try {
-        meta.textContent = "Loading leads and run stats...";
-        meta.classList.remove("error");
-
-        const [leads, runs] = await Promise.all([
-          fetchJson("/api/leads"),
-          fetchJson("/api/runs")
-        ]);
-
-        const items = leads.items || [];
-        countLeads.textContent = String(leads.count || 0);
-        countRuns.textContent = String(runs.count || 0);
-        const maxScore = items.length ? Math.max(...items.map(x => Number(x.score_total || 0))) : 0;
-        topScore.textContent = maxScore.toFixed(3);
-
-        render(items);
-        meta.textContent = "Loaded.";
-      } catch (error) {
-        meta.textContent = `Error: ${error.message}`;
-        meta.classList.add("error");
-      }
-    }
-
-    async function runPipeline() {
-      try {
-        runBtn.disabled = true;
-        runBtn.textContent = "Running...";
-        meta.textContent = "Running pipeline...";
-        meta.classList.remove("error");
-
-        const result = await fetchJson("/api/run", { method: "POST" });
-        meta.textContent = `Run completed. Stored leads: ${result.stored_leads}.`;
-        await refreshAll();
-      } catch (error) {
-        meta.textContent = `Run failed: ${error.message}`;
-        meta.classList.add("error");
-      } finally {
-        runBtn.disabled = false;
-        runBtn.textContent = "Run Pipeline Now";
-      }
-    }
-
-    runBtn.addEventListener("click", runPipeline);
-    refreshBtn.addEventListener("click", refreshAll);
-    refreshAll();
-  </script>
+  <script src="/assets/app.js?v=9"></script>
 </body>
 </html>

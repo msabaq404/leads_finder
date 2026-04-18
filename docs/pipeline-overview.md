@@ -6,7 +6,7 @@ The current implementation now supports an end-to-end flow:
 2. Rules-based filtering for programming-task intent
 3. Exact and fuzzy deduplication
 4. Balanced ranking with explainable scores
-5. Selective Gemini enrichment with cache and fallback
+5. Selective Gemini enrichment with cache and hard failure on invalid Gemini config
 
 ### Entry Point
 

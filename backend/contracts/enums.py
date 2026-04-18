@@ -13,6 +13,7 @@ class LeadStatus(str, Enum):
     NEW = "new"
     QUEUED = "queued"
     SCORED = "scored"
+    FAILED = "failed"
     REVIEWED = "reviewed"
     ARCHIVED = "archived"
     EXPORTED = "exported"

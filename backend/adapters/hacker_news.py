@@ -26,9 +26,11 @@ class HackerNewsAdapter(BaseSourceAdapter):
             page, page_size = cursor_page(request, config.page_size)
             tags = "story"
             numeric_filters = f"created_at_i>={utc_to_epoch(request.from_time)}"
+            intent_query = "job"
             payload = transport.get_json(
                 "https://hn.algolia.com/api/v1/search_by_date",
                 params={
+                    "query": intent_query,
                     "tags": tags,
                     "numericFilters": numeric_filters,
                     "page": page - 1,
@@ -51,9 +53,18 @@ class HackerNewsAdapter(BaseSourceAdapter):
         author = str(raw_item.get("by") or raw_item.get("author") or "")
         published_at = parse_unix_datetime(raw_item.get("time") or raw_item.get("created_at"))
         keywords = split_words(title + " " + body)
-        conversion_signals = ["ask_hn", "hiring"]
+        text = f"{title} {body}".lower()
+        conversion_signals: list[str] = []
+        if "who is hiring" in text or "hiring" in keywords:
+            conversion_signals.append("hiring")
+        if "freelance" in keywords:
+            conversion_signals.append("freelance")
         if "contract" in keywords:
             conversion_signals.append("contract")
+        if "bounty" in keywords:
+            conversion_signals.append("bounty")
+        if "help" in keywords:
+            conversion_signals.append("need help")
         urgency_signals = [signal for signal in keywords if signal in {"urgent", "help", "fix", "bug"}]
         return NormalizedLeadParts(
             lead_id=f"hacker_news:{item_id}",

@@ -1,10 +1,10 @@
 ## Dependencies and Source APIs
 
-The project is intentionally lightweight, but now includes one optional dependency for live Gemini enrichment.
+The project is intentionally lightweight, but now includes one required dependency for live Gemini enrichment.
 
 ### Python dependencies
 
-- `google-generativeai` (optional at runtime, required only for live Gemini calls)
+- `google.genai` via the `google-genai` package
 
 Install with:
 
@@ -12,7 +12,7 @@ Install with:
 pip install -r requirements.txt
 ```
 
-If dependency is missing, enrichment automatically falls back to deterministic local logic.
+If the dependency is missing, startup fails immediately.
 
 ### Environment variables
 
@@ -21,6 +21,7 @@ Use `.env.example` as reference:
 - `GEMINI_API_KEY`: enables live Gemini enrichment
 - `GEMINI_MODEL`: defaults to `gemini-2.0-flash`
 - `GEMINI_TIMEOUT_SECONDS`: request timeout for Gemini
+- `LEADS_DB_PATH`: SQLite file path for durable local persistence (default: `leads_finder.db`)
 
 ### Source API status
 
@@ -32,5 +33,8 @@ Use `.env.example` as reference:
 
 ### Current behavior
 
-- No API key: fallback enrichment only.
+- No API key: startup fails immediately.
 - API key + dependency installed: live Gemini enrichment for top-ranked leads.
+- Invalid `GEMINI_MODEL`: startup fails immediately.
+- App persistence defaults to SQLite; lead and run history survive restarts.
+- When started via `python -m backend.serve`, the app runs the pipeline immediately and then repeats on the configured interval from `LEADS_RUN_INTERVAL_MINUTES` (default `60`).

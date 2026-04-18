@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 import unittest
+from unittest.mock import patch
 
 from backend.api.server import LeadsFinderApiServer
 from backend.app import LeadsFinderApp
@@ -25,9 +26,12 @@ from backend.processing.dedup import DedupEngine
 from backend.processing.filtering import ProgrammingTaskFilter
 from backend.processing.ranking import LeadRanker
 from backend.enrichment.service import LeadEnrichmentService
+from backend.enrichment.gemini import GeminiBudget
+from backend.contracts.ranking import LeadScoreBreakdown
 from backend.storage.repository import InMemoryLeadRepository
 from backend.storage.service import PipelineStorageService
 from backend.review.service import ReviewService
+from backend.processing.ranking import RankResult
 
 
 @dataclass(slots=True)
@@ -44,6 +48,19 @@ class FakePipeline:
 
     def run_once(self):
         return self.summary
+
+
+class FakeGeminiClient:
+    def __init__(self, responses: list[dict[str, Any]]) -> None:
+        self.responses = responses
+        self.prompts: list[str] = []
+        self.calls = 0
+
+    def enrich(self, prompt: str) -> dict[str, Any]:
+        self.prompts.append(prompt)
+        index = min(self.calls, len(self.responses) - 1)
+        self.calls += 1
+        return self.responses[index]
 
 
 def build_lead(
@@ -154,6 +171,65 @@ class LeadsFinderPipelineTests(unittest.TestCase):
         self.assertGreater(summary.ranked[0].breakdown.final_score, 0.0)
         self.assertTrue(summary.enriched[0].summary)
 
+    def test_enrichment_retries_only_missing_leads_and_marks_failures(self) -> None:
+        lead_one = build_lead(lead_id="lead-1")
+        lead_two = build_lead(lead_id="lead-2")
+        ranked = [
+            RankResult(lead=lead_one, breakdown=LeadScoreBreakdown(0.6, 0.5, 0.4, 0.5)),
+            RankResult(lead=lead_two, breakdown=LeadScoreBreakdown(0.6, 0.5, 0.4, 0.45)),
+        ]
+        client = FakeGeminiClient(
+            responses=[
+                {
+                    "results": [
+                        {
+                            "lead_id": "lead-1",
+                            "is_help_request": True,
+                            "is_hiring_request": False,
+                            "is_freelancer_request": False,
+                            "recommend_as_lead": True,
+                            "lead_decision_reason": "matched",
+                            "category": "help",
+                            "difficulty": "low",
+                            "urgency": "high",
+                            "tech_tags": ["python"],
+                            "summary": "Lead one summary",
+                            "confidence": 0.9,
+                        }
+                    ]
+                },
+                {"results": []},
+            ]
+        )
+        service = LeadEnrichmentService(
+            client=client,
+            top_fraction=1.0,
+            missing_retry_attempts=2,
+            missing_retry_backoff_seconds=0.0,
+        )
+
+        with patch("backend.enrichment.service.time.sleep", return_value=None):
+            enriched = service.enrich_ranked(ranked)
+
+        self.assertEqual(len(client.prompts), 2)
+        self.assertIn("LEAD_ID: lead-1", client.prompts[0])
+        self.assertIn("LEAD_ID: lead-2", client.prompts[0])
+        self.assertIn("LEAD_ID: lead-2", client.prompts[1])
+        self.assertNotIn("LEAD_ID: lead-1", client.prompts[1])
+        self.assertEqual(len(enriched), 1)
+        self.assertEqual(enriched[0].lead.lead_id, "lead-1")
+        self.assertEqual(lead_one.review.status, LeadStatus.SCORED)
+        self.assertEqual(lead_two.review.status, LeadStatus.FAILED)
+        self.assertEqual(lead_two.enrichment.get("status"), "failed")
+
+    def test_gemini_budget_wait_for_slot_times_out_when_no_wait_allowed(self) -> None:
+        budget = GeminiBudget(daily_request_limit=10, requests_per_minute_limit=1)
+        budget.record_request()
+
+        self.assertFalse(budget.can_request())
+        self.assertGreater(budget.seconds_until_request_available(), 0.0)
+        self.assertFalse(budget.wait_for_slot(max_wait_seconds=0.0, poll_interval_seconds=0.01))
+
 
 class LeadsFinderApiTests(unittest.TestCase):
     def test_http_api_serves_run_leads_and_export(self) -> None:
@@ -189,6 +265,7 @@ class LeadsFinderApiTests(unittest.TestCase):
             leads_payload = self._assert_json_response(f"http://127.0.0.1:{port}/api/leads")
             self.assertEqual(leads_payload["count"], 1)
             self.assertEqual(leads_payload["items"][0]["title"], lead.title)
+            self.assertEqual(leads_payload["items"][0]["source_url"], lead.trace.source_url)
 
             runs_payload = self._assert_json_response(f"http://127.0.0.1:{port}/api/runs")
             self.assertEqual(runs_payload["count"], 1)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
 
 from backend.contracts.lead_schema import LeadRecord
@@ -72,8 +72,8 @@ class LeadRanker:
         return round(min(detail_score, 1.0), 3)
 
     def _recency_bonus(self, lead: LeadRecord) -> float:
-        reference_time = lead.trace.published_at or lead.trace.fetched_at or lead.normalized_at
-        age_hours = max((datetime.utcnow() - reference_time).total_seconds() / 3600.0, 0.0)
+        reference_time = self._utc_aware(lead.trace.published_at or lead.trace.fetched_at or lead.normalized_at)
+        age_hours = max((datetime.now(timezone.utc) - reference_time).total_seconds() / 3600.0, 0.0)
         if age_hours <= 12:
             return 0.2
         if age_hours <= 48:
@@ -81,6 +81,11 @@ class LeadRanker:
         if age_hours <= 168:
             return 0.05
         return 0.0
+
+    def _utc_aware(self, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     def _reasons_for(
         self,

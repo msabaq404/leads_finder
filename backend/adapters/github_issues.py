@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 from datetime import datetime
+import os
 
 from backend.contracts.enums import LeadSource
 from backend.contracts.source_adapter import FetchPageRequest, SourceAdapterConfig
 
 from .base import BaseSourceAdapter, NormalizedLeadParts
-from .transport import HttpTransport, cursor_page
+from .transport import HttpTransport, TransportError, cursor_page
 from .utils import content_hash, parse_datetime
 
 
@@ -23,17 +24,21 @@ class GitHubIssuesAdapter(BaseSourceAdapter):
         return super().fetch_page(request)
 
     def _build_default_fetcher(self, config: SourceAdapterConfig):
-        transport = HttpTransport()
+        token = os.getenv("GITHUB_TOKEN", "").strip()
+        headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        transport = HttpTransport(default_headers=headers)
 
         def fetcher(request: FetchPageRequest) -> dict[str, Any]:
             page, page_size = cursor_page(request, config.page_size)
-            query = (
+            intent_query = (
                 f"type:issue is:open created:{request.from_time.date().isoformat()}..{request.to_time.date().isoformat()} "
-                f"(label:\"help wanted\" OR label:bounty OR label:freelance OR label:urgent)"
+                f'"help wanted" OR freelance OR contract'
             )
             payload = transport.get_json(
                 "https://api.github.com/search/issues",
-                params={"q": query, "per_page": page_size, "page": page},
+                params={"q": intent_query, "per_page": page_size, "page": page},
                 timeout=config.timeout_seconds,
             )
             items = payload.get("items", [])
@@ -51,7 +56,20 @@ class GitHubIssuesAdapter(BaseSourceAdapter):
         published_at = parse_datetime(raw_item.get("created_at"))
         keywords = _collect_labels(raw_item)
         urgency_signals = [label for label in keywords if label in {"bug", "help wanted", "urgent"}]
-        conversion_signals = ["public_issue", "open_work_item"] if title or body else []
+        text = f"{title} {body}".lower()
+        conversion_signals: list[str] = []
+        if "help wanted" in text:
+            conversion_signals.append("help wanted")
+        if "freelance" in text:
+            conversion_signals.append("freelance")
+        if "contract" in text or "contractor" in text:
+            conversion_signals.append("contract")
+        if "hiring" in text or "hire" in text:
+            conversion_signals.append("hiring")
+        if "bounty" in text:
+            conversion_signals.append("bounty")
+        if not conversion_signals and (title or body):
+            conversion_signals.extend(["public_issue", "open_work_item"])
         owner = raw_item.get("user") or {}
         return NormalizedLeadParts(
             lead_id=f"github_issues:{issue_id}",

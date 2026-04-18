@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "RapidAPI Hub - Twttr API": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.rapidapi.com",
+        "--header",
+        "x-api-host: twitter241.p.rapidapi.com",
+        "--header",
+        "x-api-key: e8a7851aacmsh88c90f64b99f185p1c6941jsn71879c76251a"
+      ]
+    }
+  }
+}

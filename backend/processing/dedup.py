@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from typing import Iterable
 
@@ -60,8 +60,8 @@ class DedupEngine:
         return self._similarity(existing, candidate) >= self.fuzzy_threshold
 
     def _within_window(self, existing: LeadRecord, candidate: LeadRecord) -> bool:
-        existing_time = existing.trace.published_at or existing.trace.fetched_at
-        candidate_time = candidate.trace.published_at or candidate.trace.fetched_at
+        existing_time = self._utc_aware(existing.trace.published_at or existing.trace.fetched_at)
+        candidate_time = self._utc_aware(candidate.trace.published_at or candidate.trace.fetched_at)
         delta = abs(existing_time - candidate_time)
         return delta <= self.window
 
@@ -73,7 +73,7 @@ class DedupEngine:
     def _lead_priority(self, lead: LeadRecord) -> tuple[int, float, datetime]:
         score = lead.score_total if lead.score_total is not None else 0.0
         mentions = lead.dedup.mention_count
-        timestamp = lead.trace.published_at or lead.trace.fetched_at
+        timestamp = self._utc_aware(lead.trace.published_at or lead.trace.fetched_at)
         return (mentions, score, timestamp)
 
     def _merge_cluster(self, canonical: LeadRecord, duplicates: list[LeadRecord]) -> None:
@@ -105,3 +105,8 @@ class DedupEngine:
             duplicate.dedup.duplicate_of = canonical.lead_id
             duplicate.dedup.first_seen_at = canonical.dedup.first_seen_at
             duplicate.dedup.last_seen_at = canonical.dedup.last_seen_at
+
+    def _utc_aware(self, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)

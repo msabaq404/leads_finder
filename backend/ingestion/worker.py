@@ -52,26 +52,18 @@ class IngestionWorker:
                 cursor=cursor_map.get(adapter.config.source.value),
                 page_size=adapter.config.page_size,
             )
-            try:
-                page = adapter.fetch_page(request)
-                normalized = [adapter.normalize_item(item) for item in page.items]
-                leads.extend(normalized)
-                per_source.append(
-                    SourceRunSummary(
-                        source=adapter.config.source.value,
-                        fetched_items=len(page.items),
-                        normalized_items=len(normalized),
-                        next_cursor=page.next_cursor,
-                        exhausted=page.exhausted,
-                    )
+            page = adapter.fetch_page(request)
+            normalized = [adapter.normalize_item(item) for item in page.items]
+            leads.extend(normalized)
+            per_source.append(
+                SourceRunSummary(
+                    source=adapter.config.source.value,
+                    fetched_items=len(page.items),
+                    normalized_items=len(normalized),
+                    next_cursor=page.next_cursor,
+                    exhausted=page.exhausted,
                 )
-            except Exception as error:
-                per_source.append(
-                    SourceRunSummary(
-                        source=adapter.config.source.value,
-                        error=str(error),
-                    )
-                )
+            )
 
         return IngestionRunSummary(
             started_at=started_at,

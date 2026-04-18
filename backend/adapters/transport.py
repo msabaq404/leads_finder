@@ -23,12 +23,15 @@ class TransportError(RuntimeError):
 
 
 class HttpTransport:
-    def __init__(self, user_agent: str = "LeadsFinder/1.0") -> None:
+    def __init__(self, user_agent: str = "LeadsFinder/1.0", default_headers: dict[str, str] | None = None) -> None:
         self.user_agent = user_agent
+        self.default_headers = default_headers or {}
 
     def get_json(self, url: str, params: dict[str, Any] | None = None, timeout: float = 15.0) -> dict[str, Any]:
         query = f"?{urlencode(params)}" if params else ""
-        request = Request(f"{url}{query}", headers={"User-Agent": self.user_agent})
+        headers = {"User-Agent": self.user_agent}
+        headers.update(self.default_headers)
+        request = Request(f"{url}{query}", headers=headers)
         try:
             with urlopen(request, timeout=timeout) as response:
                 payload = response.read().decode("utf-8")

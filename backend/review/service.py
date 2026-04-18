@@ -12,6 +12,7 @@ class ReviewItem:
     lead_id: str
     title: str
     source: str
+    source_url: str
     score_total: float
     status: str
     reasons: list[str] = field(default_factory=list)
@@ -42,6 +43,7 @@ class ReviewService:
             lead_id=lead.lead_id,
             title=lead.title,
             source=lead.trace.source.value,
+            source_url=lead.trace.source_url,
             score_total=float(lead.score_total or 0.0),
             status=lead.review.status.value,
             reasons=list(lead.rank_reasons),

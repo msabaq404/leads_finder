@@ -2,3 +2,4 @@
 .github/prompts
 __pycache__
 .venv
+*.db

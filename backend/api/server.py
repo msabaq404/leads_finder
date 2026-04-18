@@ -5,6 +5,8 @@ from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import threading
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -14,7 +16,10 @@ from backend.review.export import export_leads_to_csv
 
 class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
     app: LeadsFinderApp
+    scheduler_interval_minutes: int = 0
+    scheduler_enabled: bool = False
     web_root = Path(__file__).resolve().parents[1] / "web"
+    asset_root = web_root / "assets"
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -24,8 +29,18 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
             self._send_dashboard()
             return
 
+        if path.startswith("/assets/"):
+            self._send_asset(path)
+            return
+
         if path == "/health":
-            self._send_json({"status": "ok"})
+            self._send_json(
+                {
+                    "status": "ok",
+                    "scheduler_enabled": self.scheduler_enabled,
+                    "scheduler_interval_minutes": self.scheduler_interval_minutes,
+                }
+            )
             return
 
         if path == "/api/leads":
@@ -77,8 +92,10 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
                 "leads_count": len(summary.ingestion.leads),
                 "per_source": [asdict(item) for item in summary.ingestion.per_source],
             },
+            "skipped_existing": summary.skipped_existing,
             "filtered_out": summary.filtered_out,
             "filtered_in": summary.filtered_in,
+            "top_rejection_reasons": list(summary.top_rejection_reasons),
             "deduped_groups": summary.deduped_groups,
             "ranked_count": len(summary.ranked),
             "enriched_count": len(summary.enriched),
@@ -108,18 +125,73 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
         html = index_path.read_text(encoding="utf-8")
         self._send_text(html, content_type="text/html; charset=utf-8")
 
+    def _send_asset(self, path: str) -> None:
+        relative = path.replace("/assets/", "", 1)
+        candidate = (self.asset_root / relative).resolve()
+        asset_root = self.asset_root.resolve()
+        if not str(candidate).startswith(str(asset_root)):
+            self._send_json({"error": "invalid_asset_path"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if not candidate.exists() or not candidate.is_file():
+            self._send_json({"error": "asset_not_found"}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        content_type = "application/octet-stream"
+        if candidate.suffix == ".css":
+            content_type = "text/css; charset=utf-8"
+        elif candidate.suffix == ".js":
+            content_type = "application/javascript; charset=utf-8"
+        elif candidate.suffix == ".json":
+            content_type = "application/json; charset=utf-8"
+        elif candidate.suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            content_type = f"image/{candidate.suffix.lstrip('.') if candidate.suffix != '.jpg' else 'jpeg'}"
+
+        body = candidate.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
 
 class LeadsFinderApiServer:
-    def __init__(self, app: LeadsFinderApp | None = None, host: str = "127.0.0.1", port: int = 8000) -> None:
+    def __init__(
+        self,
+        app: LeadsFinderApp | None = None,
+        host: str = "127.0.0.1",
+        port: int = 8000,
+        schedule_interval_minutes: int = 0,
+    ) -> None:
         self.app = app or build_app()
         self.host = host
         self.port = port
+        self.schedule_interval_minutes = schedule_interval_minutes
+        self._scheduler_stop = threading.Event()
+        self._scheduler_thread: threading.Thread | None = None
         self._server = ThreadingHTTPServer((host, port), LeadsFinderRequestHandler)
         self._server.RequestHandlerClass.app = self.app
+        self._server.RequestHandlerClass.scheduler_interval_minutes = schedule_interval_minutes
+        self._server.RequestHandlerClass.scheduler_enabled = schedule_interval_minutes > 0
+        if schedule_interval_minutes > 0:
+            self._start_scheduler()
 
     def serve_forever(self) -> None:
         self._server.serve_forever()
 
     def shutdown(self) -> None:
+        self._scheduler_stop.set()
         self._server.shutdown()
         self._server.server_close()
+        if self._scheduler_thread is not None:
+            self._scheduler_thread.join(timeout=2)
+
+    def _start_scheduler(self) -> None:
+        interval_seconds = max(int(self.schedule_interval_minutes * 60), 60)
+
+        def scheduler_loop() -> None:
+            self.app.run_once()
+            while not self._scheduler_stop.wait(interval_seconds):
+                self.app.run_once()
+
+        self._scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
+        self._scheduler_thread.start()
