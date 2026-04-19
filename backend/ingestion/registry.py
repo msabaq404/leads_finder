@@ -53,19 +53,19 @@ def build_default_registry() -> SourceRegistry:
         x=XAdapter(
             SourceAdapterConfig(
                 source=LeadSource.X,
-                enabled=env_enabled("LEADS_ENABLE_X", False),
+                enabled=env_enabled("LEADS_ENABLE_X", True),
             )
         ),
         github_issues=GitHubIssuesAdapter(
             SourceAdapterConfig(
                 source=LeadSource.GITHUB_ISSUES,
-                enabled=env_enabled("LEADS_ENABLE_GITHUB_ISSUES", False),
+                enabled=env_enabled("LEADS_ENABLE_GITHUB_ISSUES", True),
             )
         ),
         hacker_news=HackerNewsAdapter(
             SourceAdapterConfig(
                 source=LeadSource.HACKER_NEWS,
-                enabled=env_enabled("LEADS_ENABLE_HACKER_NEWS", False),
+                enabled=env_enabled("LEADS_ENABLE_HACKER_NEWS", True),
             )
         ),
         dev_to=DevToAdapter(

@@ -5,13 +5,12 @@ from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import threading
-import time
 from typing import Any
 from urllib.parse import urlparse
 
 from backend.app import LeadsFinderApp, build_app
 from backend.review.export import export_leads_to_csv
+from backend.scheduler import run_once as run_scheduler_once
 
 
 class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
@@ -73,7 +72,7 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not_found"}, status=HTTPStatus.NOT_FOUND)
             return
 
-        summary, persisted = self.app.run_once()
+        summary, persisted = run_scheduler_once(self.app)
         payload = {
             "persisted_run_id": persisted.run_id,
             "stored_leads": persisted.stored_leads,
@@ -160,38 +159,19 @@ class LeadsFinderApiServer:
         app: LeadsFinderApp | None = None,
         host: str = "127.0.0.1",
         port: int = 8000,
-        schedule_interval_minutes: int = 0,
     ) -> None:
         self.app = app or build_app()
         self.host = host
         self.port = port
-        self.schedule_interval_minutes = schedule_interval_minutes
-        self._scheduler_stop = threading.Event()
-        self._scheduler_thread: threading.Thread | None = None
         self._server = ThreadingHTTPServer((host, port), LeadsFinderRequestHandler)
         self._server.RequestHandlerClass.app = self.app
-        self._server.RequestHandlerClass.scheduler_interval_minutes = schedule_interval_minutes
-        self._server.RequestHandlerClass.scheduler_enabled = schedule_interval_minutes > 0
-        if schedule_interval_minutes > 0:
-            self._start_scheduler()
+        # Scheduler is decoupled from the web server and should run externally.
+        self._server.RequestHandlerClass.scheduler_interval_minutes = 0
+        self._server.RequestHandlerClass.scheduler_enabled = False
 
     def serve_forever(self) -> None:
         self._server.serve_forever()
 
     def shutdown(self) -> None:
-        self._scheduler_stop.set()
         self._server.shutdown()
         self._server.server_close()
-        if self._scheduler_thread is not None:
-            self._scheduler_thread.join(timeout=2)
-
-    def _start_scheduler(self) -> None:
-        interval_seconds = max(int(self.schedule_interval_minutes * 60), 60)
-
-        def scheduler_loop() -> None:
-            self.app.run_once()
-            while not self._scheduler_stop.wait(interval_seconds):
-                self.app.run_once()
-
-        self._scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
-        self._scheduler_thread.start()

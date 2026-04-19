@@ -9,7 +9,7 @@ The backend now exposes a small stdlib HTTP API.
 - `GET /api/leads` - list ranked review items
 - `GET /api/runs` - list persisted pipeline runs
 - `GET /api/export.csv` - download the current review export
-- `POST /api/run` - run ingestion, filtering, deduplication, ranking, and enrichment once
+- `POST /api/run` - trigger one scheduler-backed pipeline run (ingestion, filtering, deduplication, ranking, enrichment)
 
 ### Notes
 

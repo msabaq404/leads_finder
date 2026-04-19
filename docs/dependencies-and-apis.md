@@ -27,7 +27,7 @@ Use `.env.example` as reference:
 
 - GitHub Issues: implemented with public endpoint; token support is planned for higher rate limits.
 - Hacker News: implemented via public Algolia API.
-- Reddit: implemented via public JSON search for MVP; OAuth migration recommended for production.
+- Reddit: implemented via official public subreddit RSS/Atom feeds.
 - Dev.to: implemented via public API.
 - X: adapter exists but remains disabled by default until authenticated transport is configured.
 
@@ -37,4 +37,5 @@ Use `.env.example` as reference:
 - API key + dependency installed: live Gemini enrichment for top-ranked leads.
 - Invalid `GEMINI_MODEL`: startup fails immediately.
 - App persistence defaults to SQLite; lead and run history survive restarts.
-- When started via `python -m backend.serve`, the app runs the pipeline immediately and then repeats on the configured interval from `LEADS_RUN_INTERVAL_MINUTES` (default `60`).
+- `python -m backend.serve` starts the dashboard/API server only.
+- `python -m backend.scheduler` runs the scheduler independently (single run by default for timer-triggered environments like Azure Functions; set `LEADS_SCHEDULER_RUN_ONCE=0` to run a loop using `LEADS_RUN_INTERVAL_MINUTES`).
