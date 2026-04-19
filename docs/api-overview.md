@@ -14,3 +14,4 @@ The backend now exposes a small stdlib HTTP API.
 ### Notes
 
 This API is intentionally minimal and dependency-free. It can later be replaced or wrapped by a higher-level framework if needed.
+The server binds to `0.0.0.0` and uses Azure's `PORT` value when present, with `WEBSITES_PORT` and `LEADS_PORT` as fallbacks.

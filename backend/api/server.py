@@ -4,6 +4,7 @@ import json
 from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -157,17 +158,30 @@ class LeadsFinderApiServer:
     def __init__(
         self,
         app: LeadsFinderApp | None = None,
-        host: str = "127.0.0.1",
-        port: int = 8000,
+        host: str = "0.0.0.0",
+        port: int | None = None,
     ) -> None:
         self.app = app or build_app()
         self.host = host
-        self.port = port
-        self._server = ThreadingHTTPServer((host, port), LeadsFinderRequestHandler)
+        self.port = self._resolve_port(port)
+        self._server = ThreadingHTTPServer((host, self.port), LeadsFinderRequestHandler)
         self._server.RequestHandlerClass.app = self.app
         # Scheduler is decoupled from the web server and should run externally.
         self._server.RequestHandlerClass.scheduler_interval_minutes = 0
         self._server.RequestHandlerClass.scheduler_enabled = False
+
+    def _resolve_port(self, port: int | None) -> int:
+        if port is not None:
+            return port
+
+        env_port = os.getenv("PORT") or os.getenv("WEBSITES_PORT") or os.getenv("LEADS_PORT")
+        if env_port:
+            try:
+                return int(env_port)
+            except ValueError:
+                pass
+
+        return 8000
 
     def serve_forever(self) -> None:
         self._server.serve_forever()
