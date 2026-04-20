@@ -176,10 +176,8 @@ class LeadsFinderApiServer:
 
         env_port = os.getenv("PORT") or os.getenv("WEBSITES_PORT") or os.getenv("LEADS_PORT")
         if env_port:
-            try:
-                return int(env_port)
-            except ValueError:
-                pass
+            return int(env_port)
+            
 
         return 8000
 

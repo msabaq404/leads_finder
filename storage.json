@@ -1,0 +1,6 @@
+﻿{
+  "sku": {
+    "name": "Standard_LRS"
+  },
+  "kind": "StorageV2"
+}

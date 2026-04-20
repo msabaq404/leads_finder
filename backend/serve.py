@@ -1,14 +1,31 @@
 from __future__ import annotations
 
-from backend.api import LeadsFinderApiServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
+
+
+class HelloWorldHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802
+        body = b"hello world"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A003
+        return
 
 
 def main() -> None:
-    server = LeadsFinderApiServer(host="0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), HelloWorldHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        server.shutdown()
+        pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

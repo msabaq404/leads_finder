@@ -17,7 +17,7 @@ from backend.processing.filtering import ProgrammingTaskFilter
 from backend.processing.ranking import LeadRanker
 from backend.review.export import export_leads_to_csv
 from backend.review.service import ReviewService
-from backend.storage.repository import LeadRepository, SQLiteLeadRepository
+from backend.storage.repository import AzureSqlLeadRepository, LeadRepository, SQLiteLeadRepository
 from backend.storage.service import PipelineStorageService
 
 
@@ -112,8 +112,17 @@ def build_app() -> LeadsFinderApp:
             top_fraction=float(os.getenv("LEADS_ENRICH_TOP_FRACTION", "1.0")),
         ),
     )
-    db_path = Path(os.getenv("LEADS_DB_PATH", "leads_finder.db"))
-    repository = SQLiteLeadRepository(db_path)
+    db_backend = os.getenv("LEADS_DB_BACKEND", "sqlite").strip().lower()
+    azure_sql_connection_string = os.getenv("AZURE_SQL_CONNECTION_STRING", "").strip()
+
+    if db_backend == "azure_sql" or azure_sql_connection_string:
+        if not azure_sql_connection_string:
+            raise RuntimeError("Azure SQL is enabled but AZURE_SQL_CONNECTION_STRING is missing")
+        repository = AzureSqlLeadRepository(connection_string=azure_sql_connection_string)
+    else:
+        db_path = Path(os.getenv("LEADS_DB_PATH", "leads_finder.db"))
+        repository = SQLiteLeadRepository(db_path)
+
     storage_service = PipelineStorageService(repository)
     review_service = ReviewService(repository)
     return LeadsFinderApp(

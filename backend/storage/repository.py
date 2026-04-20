@@ -8,6 +8,12 @@ from pathlib import Path
 import sqlite3
 from typing import Protocol
 
+try:
+    import pyodbc
+except ImportError:  # pragma: no cover - dependency can be optional in local-only setups
+    pyodbc = None
+
+
 from backend.contracts.enums import LeadSource, LeadStatus
 from backend.contracts.lead_schema import (
     DedupMetadata,
@@ -167,6 +173,133 @@ class SQLiteLeadRepository:
             for row in rows
         ]
 
+
+class AzureSqlLeadRepository:
+    def __init__(
+        self,
+        *,
+        connection_string: str,
+    ) -> None:
+        if pyodbc is None:
+            raise RuntimeError("pyodbc is not installed. Add pyodbc to requirements.")
+
+        if not connection_string or not connection_string.strip():
+            raise RuntimeError("AZURE_SQL_CONNECTION_STRING is required")
+
+        self.connection_string = connection_string.strip()
+        self._init_db()
+
+    def _connect(self):
+        return pyodbc.connect(self.connection_string, autocommit=False)
+
+    def _init_db(self) -> None:
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                IF OBJECT_ID('dbo.leads', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.leads (
+                        lead_id NVARCHAR(255) NOT NULL PRIMARY KEY,
+                        score_total FLOAT NULL,
+                        payload_json NVARCHAR(MAX) NOT NULL,
+                        updated_at DATETIME2 NOT NULL
+                    )
+                END
+                """
+            )
+            cursor.execute(
+                """
+                IF OBJECT_ID('dbo.pipeline_runs', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.pipeline_runs (
+                        run_id NVARCHAR(64) NOT NULL PRIMARY KEY,
+                        created_at DATETIME2 NOT NULL,
+                        summary_json NVARCHAR(MAX) NOT NULL
+                    )
+                END
+                """
+            )
+            connection.commit()
+
+    def save_pipeline_run(self, run_id: str, summary: PipelineRunSummary) -> None:
+        serialized_summary = _to_json(summary)
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                MERGE dbo.pipeline_runs AS target
+                USING (SELECT ? AS run_id, ? AS created_at, ? AS summary_json) AS source
+                ON target.run_id = source.run_id
+                WHEN MATCHED THEN
+                    UPDATE SET created_at = source.created_at, summary_json = source.summary_json
+                WHEN NOT MATCHED THEN
+                    INSERT (run_id, created_at, summary_json)
+                    VALUES (source.run_id, source.created_at, source.summary_json);
+                """,
+                (run_id, datetime.utcnow(), serialized_summary),
+            )
+            connection.commit()
+
+    def upsert_leads(self, leads: list[LeadRecord]) -> None:
+        now = datetime.utcnow()
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            for lead in leads:
+                cursor.execute(
+                    """
+                    MERGE dbo.leads AS target
+                    USING (SELECT ? AS lead_id, ? AS score_total, ? AS payload_json, ? AS updated_at) AS source
+                    ON target.lead_id = source.lead_id
+                    WHEN MATCHED THEN
+                        UPDATE SET score_total = source.score_total, payload_json = source.payload_json, updated_at = source.updated_at
+                    WHEN NOT MATCHED THEN
+                        INSERT (lead_id, score_total, payload_json, updated_at)
+                        VALUES (source.lead_id, source.score_total, source.payload_json, source.updated_at);
+                    """,
+                    (lead.lead_id, lead.score_total, _to_json(lead), now),
+                )
+            connection.commit()
+
+    def list_leads(self) -> list[LeadRecord]:
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                SELECT payload_json
+                FROM dbo.leads
+                ORDER BY ISNULL(score_total, 0) DESC, updated_at DESC
+                """
+            )
+            rows = cursor.fetchall()
+        return [_lead_from_dict(json.loads(row[0])) for row in rows]
+
+    def get_lead_ids(self) -> set[str]:
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT lead_id FROM dbo.leads")
+            rows = cursor.fetchall()
+        return {str(row[0]) for row in rows}
+
+    def get_pipeline_runs(self) -> list[StoredPipelineRun]:
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                SELECT run_id, created_at, summary_json
+                FROM dbo.pipeline_runs
+                ORDER BY created_at DESC
+                """
+            )
+            rows = cursor.fetchall()
+        return [
+            StoredPipelineRun(
+                run_id=str(row[0]),
+                created_at=row[1] if isinstance(row[1], datetime) else (_parse_datetime(str(row[1])) or datetime.utcnow()),
+                summary=_pipeline_summary_from_dict(json.loads(str(row[2]))),
+            )
+            for row in rows
+        ]
 
 def _to_primitive(value):
     if isinstance(value, datetime):
