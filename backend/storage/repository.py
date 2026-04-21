@@ -6,6 +6,7 @@ from enum import Enum
 import json
 from pathlib import Path
 import sqlite3
+import time
 from typing import Protocol
 
 try:
@@ -190,7 +191,20 @@ class AzureSqlLeadRepository:
         self._init_db()
 
     def _connect(self):
-        return pyodbc.connect(self.connection_string, autocommit=False)
+        last_error = None
+
+        for attempt in range(3):
+            try:
+                return pyodbc.connect(
+                    self.connection_string,
+                    autocommit=False,
+                    timeout=200
+                )
+            except pyodbc.Error as e:
+                last_error = e
+                time.sleep(20)
+
+        raise last_error
 
     def _init_db(self) -> None:
         with self._connect() as connection:

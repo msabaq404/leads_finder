@@ -5,3 +5,4 @@ __pycache__
 *.db
 .azure_deploy
 .python_packages
+local.settings.json

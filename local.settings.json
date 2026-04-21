@@ -1,7 +1,8 @@
 {
-  "IsEncrypted": true,
+  "IsEncrypted": false,
   "Values": {
-    "FUNCTIONS_WORKER_RUNTIME": "CfDJ8JXwOhfb5P5AjsFEwZrid1i/Vf9PU8HAUwlYxKgPlpI/YUh5MHOED6UoocZKX2bt9s29ieYy0ESWEkO7v29nqC9Vx/hU0JVOVAyWsEKoeKCkCGmgPRRMQi8VkCJtqoM1xg=="
-  },
-  "ConnectionStrings": {}
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "AzureWebJobsStorage": ""
+  }
 }
