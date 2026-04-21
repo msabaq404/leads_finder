@@ -47,10 +47,10 @@ class LeadRepository(Protocol):
     def list_leads(self) -> list[LeadRecord]:
         """Return all stored leads."""
 
-    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+    def search_leads(self, query: str, *, limit: int, offset: int, verdict: str = "all") -> list[LeadRecord]:
         """Return a page of leads matching a free-text query."""
 
-    def count_leads(self, query: str) -> int:
+    def count_leads(self, query: str, *, verdict: str = "all") -> int:
         """Return total number of leads matching a free-text query."""
 
     def get_lead_ids(self) -> set[str]:
@@ -84,7 +84,7 @@ class InMemoryLeadRepository:
             reverse=True,
         )
 
-    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+    def search_leads(self, query: str, *, limit: int, offset: int, verdict: str = "all") -> list[LeadRecord]:
         normalized_query = (query or "").strip().lower()
         leads = self.list_leads()
         if normalized_query:
@@ -99,16 +99,25 @@ class InMemoryLeadRepository:
                     ]
                 ).lower()
             ]
+        if verdict == "approved":
+            leads = [lead for lead in leads if bool((lead.enrichment or {}).get("recommend_as_lead") is True)]
+        elif verdict == "rejected":
+            leads = [lead for lead in leads if bool((lead.enrichment or {}).get("recommend_as_lead") is False)]
         safe_offset = max(offset, 0)
         safe_limit = max(limit, 1)
         return leads[safe_offset : safe_offset + safe_limit]
 
-    def count_leads(self, query: str) -> int:
+    def count_leads(self, query: str, *, verdict: str = "all") -> int:
         normalized_query = (query or "").strip().lower()
+        leads = list(self._leads.values())
+        if verdict == "approved":
+            leads = [lead for lead in leads if bool((lead.enrichment or {}).get("recommend_as_lead") is True)]
+        elif verdict == "rejected":
+            leads = [lead for lead in leads if bool((lead.enrichment or {}).get("recommend_as_lead") is False)]
         if not normalized_query:
-            return len(self._leads)
+            return len(leads)
         count = 0
-        for lead in self._leads.values():
+        for lead in leads:
             haystack = " ".join(
                 [
                     str(lead.title or ""),
@@ -196,9 +205,12 @@ class SQLiteLeadRepository:
             ).fetchall()
         return [_lead_from_dict(json.loads(row["payload_json"])) for row in rows]
 
-    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+    def search_leads(self, query: str, *, limit: int, offset: int, verdict: str = "all") -> list[LeadRecord]:
         normalized_query = (query or "").strip()
         like_query = f"%{normalized_query}%"
+        verdict_value = verdict if verdict in {"all", "approved", "rejected"} else "all"
+        approved_like = '%"recommend_as_lead": true%'
+        rejected_like = '%"recommend_as_lead": false%'
         safe_limit = max(int(limit), 1)
         safe_offset = max(int(offset), 0)
 
@@ -208,24 +220,55 @@ class SQLiteLeadRepository:
                 SELECT payload_json
                 FROM leads
                 WHERE (? = '' OR payload_json LIKE ?)
+                  AND (
+                        ? = 'all'
+                        OR (? = 'approved' AND payload_json LIKE ?)
+                        OR (? = 'rejected' AND payload_json LIKE ?)
+                  )
                 ORDER BY updated_at DESC, COALESCE(score_total, 0) DESC
                 LIMIT ? OFFSET ?
                 """,
-                (normalized_query, like_query, safe_limit, safe_offset),
+                (
+                    normalized_query,
+                    like_query,
+                    verdict_value,
+                    verdict_value,
+                    approved_like,
+                    verdict_value,
+                    rejected_like,
+                    safe_limit,
+                    safe_offset,
+                ),
             ).fetchall()
         return [_lead_from_dict(json.loads(row["payload_json"])) for row in rows]
 
-    def count_leads(self, query: str) -> int:
+    def count_leads(self, query: str, *, verdict: str = "all") -> int:
         normalized_query = (query or "").strip()
         like_query = f"%{normalized_query}%"
+        verdict_value = verdict if verdict in {"all", "approved", "rejected"} else "all"
+        approved_like = '%"recommend_as_lead": true%'
+        rejected_like = '%"recommend_as_lead": false%'
         with self._connect() as connection:
             row = connection.execute(
                 """
                 SELECT COUNT(*) AS total
                 FROM leads
                 WHERE (? = '' OR payload_json LIKE ?)
+                  AND (
+                        ? = 'all'
+                        OR (? = 'approved' AND payload_json LIKE ?)
+                        OR (? = 'rejected' AND payload_json LIKE ?)
+                  )
                 """,
-                (normalized_query, like_query),
+                (
+                    normalized_query,
+                    like_query,
+                    verdict_value,
+                    verdict_value,
+                    approved_like,
+                    verdict_value,
+                    rejected_like,
+                ),
             ).fetchone()
         return int(row["total"] if row else 0)
 
@@ -366,9 +409,12 @@ class AzureSqlLeadRepository:
             rows = cursor.fetchall()
         return [_lead_from_dict(json.loads(row[0])) for row in rows]
 
-    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+    def search_leads(self, query: str, *, limit: int, offset: int, verdict: str = "all") -> list[LeadRecord]:
         normalized_query = (query or "").strip()
         like_query = f"%{normalized_query}%"
+        verdict_value = verdict if verdict in {"all", "approved", "rejected"} else "all"
+        approved_like = '%"recommend_as_lead": true%'
+        rejected_like = '%"recommend_as_lead": false%'
         safe_limit = max(int(limit), 1)
         safe_offset = max(int(offset), 0)
         with self._connect() as connection:
@@ -378,17 +424,35 @@ class AzureSqlLeadRepository:
                 SELECT payload_json
                 FROM dbo.leads
                 WHERE (? = '' OR payload_json LIKE ?)
+                  AND (
+                        ? = 'all'
+                        OR (? = 'approved' AND payload_json LIKE ?)
+                        OR (? = 'rejected' AND payload_json LIKE ?)
+                  )
                 ORDER BY updated_at DESC, ISNULL(score_total, 0) DESC
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
                 """,
-                (normalized_query, like_query, safe_offset, safe_limit),
+                (
+                    normalized_query,
+                    like_query,
+                    verdict_value,
+                    verdict_value,
+                    approved_like,
+                    verdict_value,
+                    rejected_like,
+                    safe_offset,
+                    safe_limit,
+                ),
             )
             rows = cursor.fetchall()
         return [_lead_from_dict(json.loads(row[0])) for row in rows]
 
-    def count_leads(self, query: str) -> int:
+    def count_leads(self, query: str, *, verdict: str = "all") -> int:
         normalized_query = (query or "").strip()
         like_query = f"%{normalized_query}%"
+        verdict_value = verdict if verdict in {"all", "approved", "rejected"} else "all"
+        approved_like = '%"recommend_as_lead": true%'
+        rejected_like = '%"recommend_as_lead": false%'
         with self._connect() as connection:
             cursor = connection.cursor()
             cursor.execute(
@@ -396,8 +460,21 @@ class AzureSqlLeadRepository:
                 SELECT COUNT(*)
                 FROM dbo.leads
                 WHERE (? = '' OR payload_json LIKE ?)
+                  AND (
+                        ? = 'all'
+                        OR (? = 'approved' AND payload_json LIKE ?)
+                        OR (? = 'rejected' AND payload_json LIKE ?)
+                  )
                 """,
-                (normalized_query, like_query),
+                (
+                    normalized_query,
+                    like_query,
+                    verdict_value,
+                    verdict_value,
+                    approved_like,
+                    verdict_value,
+                    rejected_like,
+                ),
             )
             row = cursor.fetchone()
         return int(row[0] if row else 0)

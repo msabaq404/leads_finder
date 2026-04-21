@@ -30,13 +30,21 @@ class ReviewService:
             items.append(self._to_review_item(lead))
         return items
 
-    def search_review_items(self, query: str, *, page: int, page_size: int) -> tuple[list[ReviewItem], int]:
+    def search_review_items(
+        self,
+        query: str,
+        *,
+        page: int,
+        page_size: int,
+        verdict: str = "all",
+    ) -> tuple[list[ReviewItem], int]:
         safe_page = max(int(page), 1)
         safe_page_size = max(int(page_size), 1)
         offset = (safe_page - 1) * safe_page_size
+        verdict_value = verdict if verdict in {"all", "approved", "rejected"} else "all"
 
-        total = self.repository.count_leads(query)
-        leads = self.repository.search_leads(query, limit=safe_page_size, offset=offset)
+        total = self.repository.count_leads(query, verdict=verdict_value)
+        leads = self.repository.search_leads(query, limit=safe_page_size, offset=offset, verdict=verdict_value)
         return [self._to_review_item(lead) for lead in leads], total
 
     def get_lead(self, lead_id: str) -> LeadRecord | None:

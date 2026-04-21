@@ -1,13 +1,22 @@
 const state = {
   leads: [],
+  approvedLeads: [],
+  rejectedLeads: [],
   runs: [],
   health: {},
   currentTab: "approved",
   pagination: {
-    page: 1,
     pageSize: 50,
-    total: 0,
-    hasNext: false,
+    approved: {
+      page: 1,
+      total: 0,
+      hasNext: false,
+    },
+    rejected: {
+      page: 1,
+      total: 0,
+      hasNext: false,
+    },
   },
   filters: {
     search: "",
@@ -90,9 +99,12 @@ function setMeta(message, isError = false) {
 }
 
 function buildLeadsUrl() {
+  const tab = state.currentTab === "rejected" ? "rejected" : "approved";
+  const tabPaging = state.pagination[tab];
   const params = new URLSearchParams();
-  params.set("page", String(state.pagination.page));
+  params.set("page", String(tabPaging.page));
   params.set("page_size", String(state.pagination.pageSize));
+  params.set("verdict", tab);
   const query = String(state.filters.search || "").trim();
   if (query) {
     params.set("search", query);
@@ -174,20 +186,23 @@ function renderGeminiVerdict(item) {
 }
 
 function renderStats() {
-  const leads = state.leads || [];
+  const leads = [...(state.approvedLeads || []), ...(state.rejectedLeads || [])];
   const approved = getVisibleLeads(true);
   const rejected = getVisibleLeads(false);
   const runs = state.runs || [];
   const latestRun = runs[0] || null;
   const topScore = leads.length ? Math.max(...leads.map((x) => Number(x.score_total || 0))) : 0;
   const health = state.health || {};
+  const approvedTotal = Number(state.pagination.approved.total || 0);
+  const rejectedTotal = Number(state.pagination.rejected.total || 0);
+  const totalLeads = approvedTotal + rejectedTotal;
 
-  ui.countLeads.textContent = String(Number(state.pagination.total || 0));
+  ui.countLeads.textContent = String(totalLeads);
   ui.countRuns.textContent = String(runs.length);
   ui.topScore.textContent = topScore.toFixed(3);
   ui.filteredIn.textContent = latestRun ? String(latestRun.summary.filtered_in || 0) : "0";
-  ui.approvedCount.textContent = String(approved.length);
-  ui.rejectedCount.textContent = String(rejected.length);
+  ui.approvedCount.textContent = String(approvedTotal);
+  ui.rejectedCount.textContent = String(rejectedTotal);
   ui.skippedExisting.textContent = latestRun ? String(latestRun.summary.skipped_existing || 0) : "0";
   ui.filteredIn.title = `Approved: ${approved.length} | Rejected: ${rejected.length}`;
   ui.autoRunStatus.textContent = health.scheduler_enabled
@@ -195,22 +210,25 @@ function renderStats() {
     : "off";
 
   if (ui.approvedMeta) {
-    ui.approvedMeta.textContent = `Approved: ${approved.length}`;
+    ui.approvedMeta.textContent = `Approved: ${approvedTotal}`;
   }
   if (ui.rejectedMeta) {
-    ui.rejectedMeta.textContent = `Rejected: ${rejected.length}`;
+    ui.rejectedMeta.textContent = `Rejected: ${rejectedTotal}`;
   }
 }
 
 function renderPagination() {
-  const page = Number(state.pagination.page || 1);
+  const tab = state.currentTab === "rejected" ? "rejected" : "approved";
+  const tabPaging = state.pagination[tab];
+  const page = Number(tabPaging.page || 1);
   const pageSize = Number(state.pagination.pageSize || 50);
-  const total = Number(state.pagination.total || 0);
-  const hasNext = Boolean(state.pagination.hasNext);
+  const total = Number(tabPaging.total || 0);
+  const hasNext = Boolean(tabPaging.hasNext);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const label = tab === "approved" ? "Approved" : "Rejected";
 
   if (ui.pageInfo) {
-    ui.pageInfo.textContent = `Page ${page} of ${totalPages}`;
+    ui.pageInfo.textContent = `${label} page ${page} of ${totalPages}`;
   }
   if (ui.pagePrevBtn) {
     ui.pagePrevBtn.disabled = page <= 1;
@@ -453,9 +471,12 @@ function renderLeads() {
   const approved = getVisibleLeads(true);
   const rejected = getVisibleLeads(false);
   if (ui.filterResultMeta) {
-    const total = Number(state.pagination.total || 0);
-    const shown = approved.length + rejected.length;
-    ui.filterResultMeta.textContent = `Showing ${shown} on this page • ${total} total matches`;
+    const shownApproved = approved.length;
+    const shownRejected = rejected.length;
+    const totalApproved = Number(state.pagination.approved.total || 0);
+    const totalRejected = Number(state.pagination.rejected.total || 0);
+    ui.filterResultMeta.textContent =
+      `Approved: ${shownApproved} shown / ${totalApproved} total • Rejected: ${shownRejected} shown / ${totalRejected} total`;
   }
   
   function renderLeadList(items, emptyMsg = "No leads in this section.") {
@@ -521,11 +542,18 @@ function renderLeads() {
 }
 
 async function refreshLeadsPage({ showMeta = false } = {}) {
+  const tab = state.currentTab === "rejected" ? "rejected" : "approved";
   const leads = await fetchJson(buildLeadsUrl());
-  state.leads = leads.items || [];
-  state.pagination.total = Number(leads.total || 0);
-  state.pagination.hasNext = Boolean(leads.has_next);
-  state.pagination.page = Number(leads.page || state.pagination.page || 1);
+  const items = leads.items || [];
+  if (tab === "approved") {
+    state.approvedLeads = items;
+  } else {
+    state.rejectedLeads = items;
+  }
+  state.leads = [...(state.approvedLeads || []), ...(state.rejectedLeads || [])];
+  state.pagination[tab].total = Number(leads.total || 0);
+  state.pagination[tab].hasNext = Boolean(leads.has_next);
+  state.pagination[tab].page = Number(leads.page || state.pagination[tab].page || 1);
   state.pagination.pageSize = Number(leads.page_size || state.pagination.pageSize || 50);
 
   updateSourceOptions();
@@ -539,13 +567,31 @@ async function refreshLeadsPage({ showMeta = false } = {}) {
   }
 }
 
+async function refreshBothLeadTabs({ showMeta = false } = {}) {
+  const originalTab = state.currentTab;
+  state.currentTab = "approved";
+  await refreshLeadsPage({ showMeta: false });
+  state.currentTab = "rejected";
+  await refreshLeadsPage({ showMeta: false });
+  state.currentTab = originalTab;
+  state.leads = [...(state.approvedLeads || []), ...(state.rejectedLeads || [])];
+  updateSourceOptions();
+  updateFacetOptions();
+  renderStats();
+  renderLeads();
+  renderPagination();
+  if (showMeta) {
+    setMeta("Lead pages loaded.");
+  }
+}
+
 async function refreshAll() {
   try {
     setMeta("Loading dashboard state...");
     const [runs, health] = await Promise.all([fetchJson("/api/runs"), fetchJson("/health")]);
     state.runs = runs.items || [];
     state.health = health;
-    await refreshLeadsPage();
+    await refreshBothLeadTabs();
 
     renderRunSnapshot();
     renderHealth();
@@ -587,14 +633,15 @@ function applyFilters() {
 
 async function handleSearchChanged() {
   syncFiltersFromUi();
-  state.pagination.page = 1;
+  state.pagination.approved.page = 1;
+  state.pagination.rejected.page = 1;
 
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
   }
   searchDebounceTimer = setTimeout(async () => {
     try {
-      await refreshLeadsPage({ showMeta: true });
+      await refreshBothLeadTabs({ showMeta: true });
     } catch (error) {
       setMeta(`Error: ${error.message}`, true);
     }
@@ -602,10 +649,11 @@ async function handleSearchChanged() {
 }
 
 async function goToPreviousPage() {
-  if (state.pagination.page <= 1) {
+  const tab = state.currentTab === "rejected" ? "rejected" : "approved";
+  if (state.pagination[tab].page <= 1) {
     return;
   }
-  state.pagination.page -= 1;
+  state.pagination[tab].page -= 1;
   try {
     await refreshLeadsPage({ showMeta: true });
   } catch (error) {
@@ -614,10 +662,11 @@ async function goToPreviousPage() {
 }
 
 async function goToNextPage() {
-  if (!state.pagination.hasNext) {
+  const tab = state.currentTab === "rejected" ? "rejected" : "approved";
+  if (!state.pagination[tab].hasNext) {
     return;
   }
-  state.pagination.page += 1;
+  state.pagination[tab].page += 1;
   try {
     await refreshLeadsPage({ showMeta: true });
   } catch (error) {
@@ -628,9 +677,10 @@ async function goToNextPage() {
 async function handlePageSizeChanged() {
   const value = Number.parseInt(ui.pageSizeSelect.value || "50", 10) || 50;
   state.pagination.pageSize = Math.min(Math.max(value, 1), 200);
-  state.pagination.page = 1;
+  state.pagination.approved.page = 1;
+  state.pagination.rejected.page = 1;
   try {
-    await refreshLeadsPage({ showMeta: true });
+    await refreshBothLeadTabs({ showMeta: true });
   } catch (error) {
     setMeta(`Error: ${error.message}`, true);
   }
@@ -693,6 +743,7 @@ function setupTabSwitching() {
       if (activeContent) {
         activeContent.classList.add("active");
       }
+      renderPagination();
     });
   });
 }

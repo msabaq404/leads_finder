@@ -46,6 +46,9 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/leads":
             query_params = parse_qs(parsed.query)
             search = (query_params.get("search", [""])[0] or "").strip()
+            verdict = (query_params.get("verdict", ["all"])[0] or "all").strip().lower()
+            if verdict not in {"all", "approved", "rejected"}:
+                verdict = "all"
             try:
                 page = int((query_params.get("page", ["1"])[0] or "1").strip())
             except ValueError:
@@ -62,6 +65,7 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
                 search,
                 page=safe_page,
                 page_size=safe_page_size,
+                verdict=verdict,
             )
             payload_items = [asdict(item) for item in items]
             self._send_json(
@@ -71,6 +75,7 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
                     "total": total,
                     "page": safe_page,
                     "page_size": safe_page_size,
+                    "verdict": verdict,
                     "has_next": (safe_page * safe_page_size) < total,
                 }
             )
