@@ -3,6 +3,12 @@ const state = {
   runs: [],
   health: {},
   currentTab: "approved",
+  pagination: {
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    hasNext: false,
+  },
   filters: {
     search: "",
     source: "all",
@@ -62,7 +68,13 @@ const ui = {
   approvedLeads: document.getElementById("approvedLeads"),
   rejectedLeads: document.getElementById("rejectedLeads"),
   healthList: document.getElementById("healthList"),
+  pagePrevBtn: document.getElementById("pagePrevBtn"),
+  pageNextBtn: document.getElementById("pageNextBtn"),
+  pageInfo: document.getElementById("pageInfo"),
+  pageSizeSelect: document.getElementById("pageSizeSelect"),
 };
+
+let searchDebounceTimer = null;
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
@@ -75,6 +87,17 @@ async function fetchJson(url, options) {
 function setMeta(message, isError = false) {
   ui.meta.textContent = message;
   ui.meta.classList.toggle("error", isError);
+}
+
+function buildLeadsUrl() {
+  const params = new URLSearchParams();
+  params.set("page", String(state.pagination.page));
+  params.set("page_size", String(state.pagination.pageSize));
+  const query = String(state.filters.search || "").trim();
+  if (query) {
+    params.set("search", query);
+  }
+  return `/api/leads?${params.toString()}`;
 }
 
 function escapeHtml(text) {
@@ -159,7 +182,7 @@ function renderStats() {
   const topScore = leads.length ? Math.max(...leads.map((x) => Number(x.score_total || 0))) : 0;
   const health = state.health || {};
 
-  ui.countLeads.textContent = String(leads.length);
+  ui.countLeads.textContent = String(Number(state.pagination.total || 0));
   ui.countRuns.textContent = String(runs.length);
   ui.topScore.textContent = topScore.toFixed(3);
   ui.filteredIn.textContent = latestRun ? String(latestRun.summary.filtered_in || 0) : "0";
@@ -176,6 +199,24 @@ function renderStats() {
   }
   if (ui.rejectedMeta) {
     ui.rejectedMeta.textContent = `Rejected: ${rejected.length}`;
+  }
+}
+
+function renderPagination() {
+  const page = Number(state.pagination.page || 1);
+  const pageSize = Number(state.pagination.pageSize || 50);
+  const total = Number(state.pagination.total || 0);
+  const hasNext = Boolean(state.pagination.hasNext);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  if (ui.pageInfo) {
+    ui.pageInfo.textContent = `Page ${page} of ${totalPages}`;
+  }
+  if (ui.pagePrevBtn) {
+    ui.pagePrevBtn.disabled = page <= 1;
+  }
+  if (ui.pageNextBtn) {
+    ui.pageNextBtn.disabled = !hasNext;
   }
 }
 
@@ -412,9 +453,9 @@ function renderLeads() {
   const approved = getVisibleLeads(true);
   const rejected = getVisibleLeads(false);
   if (ui.filterResultMeta) {
-    const total = state.leads.length;
+    const total = Number(state.pagination.total || 0);
     const shown = approved.length + rejected.length;
-    ui.filterResultMeta.textContent = `Showing ${shown} of ${total} leads`;
+    ui.filterResultMeta.textContent = `Showing ${shown} on this page • ${total} total matches`;
   }
   
   function renderLeadList(items, emptyMsg = "No leads in this section.") {
@@ -479,19 +520,35 @@ function renderLeads() {
   ui.rejectedLeads.innerHTML = renderLeadList(rejected, "No rejected leads match the filters.");
 }
 
+async function refreshLeadsPage({ showMeta = false } = {}) {
+  const leads = await fetchJson(buildLeadsUrl());
+  state.leads = leads.items || [];
+  state.pagination.total = Number(leads.total || 0);
+  state.pagination.hasNext = Boolean(leads.has_next);
+  state.pagination.page = Number(leads.page || state.pagination.page || 1);
+  state.pagination.pageSize = Number(leads.page_size || state.pagination.pageSize || 50);
+
+  updateSourceOptions();
+  updateFacetOptions();
+  renderStats();
+  renderLeads();
+  renderPagination();
+
+  if (showMeta) {
+    setMeta("Leads page loaded.");
+  }
+}
+
 async function refreshAll() {
   try {
     setMeta("Loading dashboard state...");
-    const [leads, runs, health] = await Promise.all([fetchJson("/api/leads"), fetchJson("/api/runs"), fetchJson("/health")]);
-    state.leads = leads.items || [];
+    const [runs, health] = await Promise.all([fetchJson("/api/runs"), fetchJson("/health")]);
     state.runs = runs.items || [];
     state.health = health;
-    updateSourceOptions();
-    updateFacetOptions();
-    renderStats();
+    await refreshLeadsPage();
+
     renderRunSnapshot();
     renderHealth();
-    renderLeads();
     const latestRun = state.runs[0];
     const rejectionReasons = latestRun?.summary?.top_rejection_reasons || [];
     if (latestRun && Number(latestRun.summary.filtered_in || 0) === 0 && rejectionReasons.length) {
@@ -525,6 +582,58 @@ function applyFilters() {
   syncFiltersFromUi();
   renderStats();
   renderLeads();
+  renderPagination();
+}
+
+async function handleSearchChanged() {
+  syncFiltersFromUi();
+  state.pagination.page = 1;
+
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  searchDebounceTimer = setTimeout(async () => {
+    try {
+      await refreshLeadsPage({ showMeta: true });
+    } catch (error) {
+      setMeta(`Error: ${error.message}`, true);
+    }
+  }, 250);
+}
+
+async function goToPreviousPage() {
+  if (state.pagination.page <= 1) {
+    return;
+  }
+  state.pagination.page -= 1;
+  try {
+    await refreshLeadsPage({ showMeta: true });
+  } catch (error) {
+    setMeta(`Error: ${error.message}`, true);
+  }
+}
+
+async function goToNextPage() {
+  if (!state.pagination.hasNext) {
+    return;
+  }
+  state.pagination.page += 1;
+  try {
+    await refreshLeadsPage({ showMeta: true });
+  } catch (error) {
+    setMeta(`Error: ${error.message}`, true);
+  }
+}
+
+async function handlePageSizeChanged() {
+  const value = Number.parseInt(ui.pageSizeSelect.value || "50", 10) || 50;
+  state.pagination.pageSize = Math.min(Math.max(value, 1), 200);
+  state.pagination.page = 1;
+  try {
+    await refreshLeadsPage({ showMeta: true });
+  } catch (error) {
+    setMeta(`Error: ${error.message}`, true);
+  }
 }
 
 function clearFilters() {
@@ -542,7 +651,7 @@ function clearFilters() {
   ui.hiringOnlyInput.checked = false;
   ui.helpOnlyInput.checked = false;
   ui.sortSelect.value = "verdict_priority";
-  applyFilters();
+  handleSearchChanged();
 }
 
 function applyPreset(name) {
@@ -616,7 +725,7 @@ async function runPipeline() {
 
 ui.runBtn.addEventListener("click", runPipeline);
 ui.refreshBtn.addEventListener("click", refreshAll);
-ui.searchInput.addEventListener("input", applyFilters);
+ui.searchInput.addEventListener("input", handleSearchChanged);
 ui.sourceSelect.addEventListener("change", applyFilters);
 ui.minScoreInput.addEventListener("input", applyFilters);
 ui.minConfidenceInput.addEventListener("input", applyFilters);
@@ -634,5 +743,14 @@ ui.presetFreelanceBtn.addEventListener("click", () => applyPreset("freelance"));
 ui.presetHelpBtn.addEventListener("click", () => applyPreset("help"));
 ui.presetHighSignalBtn.addEventListener("click", () => applyPreset("high_signal"));
 ui.clearFiltersBtn.addEventListener("click", clearFilters);
+if (ui.pagePrevBtn) {
+  ui.pagePrevBtn.addEventListener("click", goToPreviousPage);
+}
+if (ui.pageNextBtn) {
+  ui.pageNextBtn.addEventListener("click", goToNextPage);
+}
+if (ui.pageSizeSelect) {
+  ui.pageSizeSelect.addEventListener("change", handlePageSizeChanged);
+}
 setupTabSwitching();
 refreshAll();

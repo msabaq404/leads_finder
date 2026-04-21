@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from backend.app import LeadsFinderApp, build_app
 from backend.review.export import export_leads_to_csv
@@ -44,8 +44,36 @@ class LeadsFinderRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/leads":
-            items = [asdict(item) for item in self.app.list_review_items()]
-            self._send_json({"items": items, "count": len(items)})
+            query_params = parse_qs(parsed.query)
+            search = (query_params.get("search", [""])[0] or "").strip()
+            try:
+                page = int((query_params.get("page", ["1"])[0] or "1").strip())
+            except ValueError:
+                page = 1
+            try:
+                page_size = int((query_params.get("page_size", ["50"])[0] or "50").strip())
+            except ValueError:
+                page_size = 50
+
+            safe_page = max(page, 1)
+            safe_page_size = min(max(page_size, 1), 200)
+
+            items, total = self.app.review_service.search_review_items(
+                search,
+                page=safe_page,
+                page_size=safe_page_size,
+            )
+            payload_items = [asdict(item) for item in items]
+            self._send_json(
+                {
+                    "items": payload_items,
+                    "count": len(payload_items),
+                    "total": total,
+                    "page": safe_page,
+                    "page_size": safe_page_size,
+                    "has_next": (safe_page * safe_page_size) < total,
+                }
+            )
             return
 
         if path == "/api/runs":

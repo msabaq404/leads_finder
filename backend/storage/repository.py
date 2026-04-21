@@ -47,6 +47,12 @@ class LeadRepository(Protocol):
     def list_leads(self) -> list[LeadRecord]:
         """Return all stored leads."""
 
+    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+        """Return a page of leads matching a free-text query."""
+
+    def count_leads(self, query: str) -> int:
+        """Return total number of leads matching a free-text query."""
+
     def get_lead_ids(self) -> set[str]:
         """Return IDs for all stored leads."""
 
@@ -71,9 +77,48 @@ class InMemoryLeadRepository:
     def list_leads(self) -> list[LeadRecord]:
         return sorted(
             self._leads.values(),
-            key=lambda lead: lead.score_total if lead.score_total is not None else 0.0,
+            key=lambda lead: (
+                lead.normalized_at or datetime.min,
+                lead.score_total if lead.score_total is not None else 0.0,
+            ),
             reverse=True,
         )
+
+    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+        normalized_query = (query or "").strip().lower()
+        leads = self.list_leads()
+        if normalized_query:
+            leads = [
+                lead
+                for lead in leads
+                if normalized_query in " ".join(
+                    [
+                        str(lead.title or ""),
+                        str(lead.body or ""),
+                        str(lead.trace.source.value or ""),
+                    ]
+                ).lower()
+            ]
+        safe_offset = max(offset, 0)
+        safe_limit = max(limit, 1)
+        return leads[safe_offset : safe_offset + safe_limit]
+
+    def count_leads(self, query: str) -> int:
+        normalized_query = (query or "").strip().lower()
+        if not normalized_query:
+            return len(self._leads)
+        count = 0
+        for lead in self._leads.values():
+            haystack = " ".join(
+                [
+                    str(lead.title or ""),
+                    str(lead.body or ""),
+                    str(lead.trace.source.value or ""),
+                ]
+            ).lower()
+            if normalized_query in haystack:
+                count += 1
+        return count
 
     def get_lead_ids(self) -> set[str]:
         return set(self._leads.keys())
@@ -146,10 +191,43 @@ class SQLiteLeadRepository:
                 """
                 SELECT payload_json
                 FROM leads
-                ORDER BY COALESCE(score_total, 0) DESC, updated_at DESC
+                ORDER BY updated_at DESC, COALESCE(score_total, 0) DESC
                 """
             ).fetchall()
         return [_lead_from_dict(json.loads(row["payload_json"])) for row in rows]
+
+    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+        normalized_query = (query or "").strip()
+        like_query = f"%{normalized_query}%"
+        safe_limit = max(int(limit), 1)
+        safe_offset = max(int(offset), 0)
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload_json
+                FROM leads
+                WHERE (? = '' OR payload_json LIKE ?)
+                ORDER BY updated_at DESC, COALESCE(score_total, 0) DESC
+                LIMIT ? OFFSET ?
+                """,
+                (normalized_query, like_query, safe_limit, safe_offset),
+            ).fetchall()
+        return [_lead_from_dict(json.loads(row["payload_json"])) for row in rows]
+
+    def count_leads(self, query: str) -> int:
+        normalized_query = (query or "").strip()
+        like_query = f"%{normalized_query}%"
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM leads
+                WHERE (? = '' OR payload_json LIKE ?)
+                """,
+                (normalized_query, like_query),
+            ).fetchone()
+        return int(row["total"] if row else 0)
 
     def get_lead_ids(self) -> set[str]:
         with self._connect() as connection:
@@ -282,11 +360,47 @@ class AzureSqlLeadRepository:
                 """
                 SELECT payload_json
                 FROM dbo.leads
-                ORDER BY ISNULL(score_total, 0) DESC, updated_at DESC
+                ORDER BY updated_at DESC, ISNULL(score_total, 0) DESC
                 """
             )
             rows = cursor.fetchall()
         return [_lead_from_dict(json.loads(row[0])) for row in rows]
+
+    def search_leads(self, query: str, *, limit: int, offset: int) -> list[LeadRecord]:
+        normalized_query = (query or "").strip()
+        like_query = f"%{normalized_query}%"
+        safe_limit = max(int(limit), 1)
+        safe_offset = max(int(offset), 0)
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                SELECT payload_json
+                FROM dbo.leads
+                WHERE (? = '' OR payload_json LIKE ?)
+                ORDER BY updated_at DESC, ISNULL(score_total, 0) DESC
+                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+                """,
+                (normalized_query, like_query, safe_offset, safe_limit),
+            )
+            rows = cursor.fetchall()
+        return [_lead_from_dict(json.loads(row[0])) for row in rows]
+
+    def count_leads(self, query: str) -> int:
+        normalized_query = (query or "").strip()
+        like_query = f"%{normalized_query}%"
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM dbo.leads
+                WHERE (? = '' OR payload_json LIKE ?)
+                """,
+                (normalized_query, like_query),
+            )
+            row = cursor.fetchone()
+        return int(row[0] if row else 0)
 
     def get_lead_ids(self) -> set[str]:
         with self._connect() as connection:

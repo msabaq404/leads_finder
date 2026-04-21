@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import os
+import random
 import re
 import time
 from typing import Any
@@ -53,6 +54,16 @@ class LeadEnrichmentService:
         )
         self.rate_wait_timeout_seconds = max(0.0, float(os.getenv("GEMINI_RATE_WAIT_TIMEOUT_SECONDS", "65")))
         self.rate_wait_poll_seconds = max(0.01, float(os.getenv("GEMINI_RATE_WAIT_POLL_SECONDS", "0.25")))
+        self.request_retry_attempts = max(1, int(os.getenv("GEMINI_REQUEST_RETRY_ATTEMPTS", "4")))
+        self.request_retry_base_backoff_seconds = max(
+            0.0,
+            float(os.getenv("GEMINI_REQUEST_RETRY_BASE_BACKOFF_SECONDS", "1.0")),
+        )
+        self.request_retry_max_backoff_seconds = max(
+            self.request_retry_base_backoff_seconds,
+            float(os.getenv("GEMINI_REQUEST_RETRY_MAX_BACKOFF_SECONDS", "12.0")),
+        )
+        self.request_retry_jitter_seconds = max(0.0, float(os.getenv("GEMINI_REQUEST_RETRY_JITTER_SECONDS", "0.35")))
         self.debug_gemini = os.getenv("GEMINI_DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
         self.list_models_on_start = os.getenv("GEMINI_LIST_MODELS", "1").strip().lower() in {"1", "true", "yes", "on"}
         if self.debug_gemini:
@@ -181,26 +192,16 @@ class LeadEnrichmentService:
         attempt = 1
 
         while remaining:
-            if not self.budget.wait_for_slot(
-                max_wait_seconds=self.rate_wait_timeout_seconds,
-                poll_interval_seconds=self.rate_wait_poll_seconds,
-            ):
-                if self.budget.is_daily_exhausted():
-                    self._mark_failed(remaining, "Gemini daily budget exhausted")
-                else:
-                    self._mark_failed(
-                        remaining,
-                        "Gemini rate limit wait timeout",
-                    )
-                break
-
             if attempt > 1 and self.missing_retry_backoff_seconds > 0:
                 delay = self.missing_retry_backoff_seconds * (2 ** (attempt - 2))
                 time.sleep(delay)
 
             prompt = self._build_batch_prompt(remaining)
-            response = self.client.enrich(prompt)
-            self.budget.record_request()
+            try:
+                response = self._request_gemini_with_backoff(prompt)
+            except RuntimeError as error:
+                self._mark_failed(remaining, str(error))
+                break
             if self.debug_gemini:
                 print("[GEMINI] raw batch response: " + json.dumps(response, ensure_ascii=True))
             by_id = self._batch_response_by_id(response)
@@ -233,6 +234,48 @@ class LeadEnrichmentService:
             attempt += 1
 
         return results
+
+    def _request_gemini_with_backoff(self, prompt: str) -> dict[str, Any]:
+        assert self.client is not None
+        last_error: Exception | None = None
+
+        for request_attempt in range(1, self.request_retry_attempts + 1):
+            if not self.budget.wait_for_slot(
+                max_wait_seconds=self.rate_wait_timeout_seconds,
+                poll_interval_seconds=self.rate_wait_poll_seconds,
+            ):
+                if self.budget.is_daily_exhausted():
+                    raise RuntimeError("Gemini daily budget exhausted")
+                raise RuntimeError("Gemini rate limit wait timeout")
+
+            try:
+                response = self.client.enrich(prompt)
+                self.budget.record_request()
+                return response
+            except Exception as error:  # pragma: no cover - network/provider errors are runtime-specific
+                self.budget.record_request()
+                last_error = error
+                if request_attempt >= self.request_retry_attempts:
+                    break
+
+                delay = min(
+                    self.request_retry_max_backoff_seconds,
+                    self.request_retry_base_backoff_seconds * (2 ** (request_attempt - 1)),
+                )
+                jitter = random.uniform(0.0, self.request_retry_jitter_seconds)
+                wait_seconds = delay + jitter
+
+                if self.debug_gemini:
+                    print(
+                        "[GEMINI] request failed; retrying "
+                        f"attempt={request_attempt + 1}/{self.request_retry_attempts}; "
+                        f"wait={wait_seconds:.2f}s; error={error!r}"
+                    )
+
+                if wait_seconds > 0:
+                    time.sleep(wait_seconds)
+
+        raise RuntimeError(f"Gemini request failed after retries: {last_error}")
 
     def _chunked(self, values: list[LeadRecord], size: int) -> list[list[LeadRecord]]:
         return [values[index : index + size] for index in range(0, len(values), size)]
