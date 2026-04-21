@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
+from backend.api import LeadsFinderApiServer
 
 
 class HelloWorldHandler(BaseHTTPRequestHandler):
@@ -18,8 +19,8 @@ class HelloWorldHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    port = int(os.getenv("PORT", "8000"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), HelloWorldHandler)
+    # port = int(os.getenv("PORT", "8000"))
+    server = LeadsFinderApiServer()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
